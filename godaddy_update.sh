@@ -23,6 +23,7 @@
 	printf "		-s : API Secret. Visit developer.godaddy.com if you need one.\n" && \
 	printf "		-d : Domain name (example.com).\n" && \
 	printf "		-r : Record. If updating the domain itself, use '@', otherwise, this is used to update hosts under a domain, for example, 'ex' in 'ex.ample.com'.\n" && \
+	printf "		-f : Force. Update DNS information regardless of whether it matches your current external IP. This flag is only needed once.\n" && \
 	printf "		-h : Print this help.\n" && \
 	exit 0
 
@@ -33,6 +34,7 @@ sec=""
 dom=""
 rec=""
 ttl=""
+force=0
 
 # Loop until there are no arguments remaining.
 until [[ -z $@ ]];do
@@ -44,7 +46,8 @@ until [[ -z $@ ]];do
 			-d ) [[ ! -z $2 ]] && dom=$2 && shift || printf "'$1' has no argument!\n";;
 			-r ) [[ ! -z $2 ]] && rec=$2 && shift || printf "'$1' has no argument!\n";;
 			-t ) [[ ! -z $2 ]] && ttl=$2 && shift || printf "'$1' has no argument!\n";;
-			-egg ) printf "¯\\_(ツ)_/¯\n" && shift;;
+			-f ) [[ $force=0 ]] && force=1 && printf "'-f' specified. Updating regardless of current DNS information.\n" && force=1;;
+			-egg ) printf "¯\\_( o _ o )_/¯\n";;
 			 * ) printf "Unrecognised argument '$1'\n" && shift;; \
 		esac
 		shift
@@ -65,12 +68,13 @@ until [[ -z $@ ]];do
 	gdip=`curl -s -X GET -H "Authorization: sso-key $key:$sec" "https://api.godaddy.com/v1/domains/$dom/records/A/$rec" 2>/dev/null`
 	gdip=`printf "$gdip" | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b"`
 
-	# Only bother updating if the IPs are actually different.
-	[[ "$gdip" = "$ip" ]] && \
-		printf "Record '$rec' of domain '$dom' is already up to date.\n" \
+	# Only bother updating if the IPs are actually different, unless force (-f) is specified.
+	update=0
+	[[ $force = 1 ]] && update=1
+	[[ $force = 0 ]] && [[ "$gdip" != "$ip" ]] && printf "DNS information for record '$rec.$dom' differs from current external IP. Updating.\n" && update=1
+	[[ $update = 0 ]] && printf "DNS information for record '$rec.$dom' matches current external IP. No need to update.\n" \
 	||	(
 		printf "Updating record '$rec' of domain '$dom'.\n"
-		request='{"data":"'$ip'","ttl":3600}'
 		curl -s -X PUT "https://api.godaddy.com/v1/domains/$dom/records/A/$rec" -H "Authorization: sso-key $key:$sec" -H "Content-Type: application/json" -d "[{\"data\": \"$ip\",\"ttl\":$ttl}]" 2>/dev/null
    		)
 
